@@ -33,6 +33,7 @@ const Admin = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [unsubscribeDoctors, setUnsubscribeDoctors] = useState(null);
 
   useEffect(() => {
     const checkAdminAccess = async () => {
@@ -61,20 +62,37 @@ const Admin = () => {
     };
 
     const fetchDoctors = () => {
+      if (unsubscribeDoctors) {
+        unsubscribeDoctors(); // Clean up previous listener
+      }
+
       const q = query(collection(db, 'users'), where('role', '==', 'doctor'));
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const doctorsList = querySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setDoctors(doctorsList);
-      }, (error) => {
-        setErrorMessage(`Failed to fetch doctors: ${error.message}`);
-      });
-      return () => unsubscribe();
+      const unsubscribe = onSnapshot(
+        q,
+        (querySnapshot) => {
+          const doctorsList = querySnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+          setDoctors(doctorsList);
+        },
+        (error) => {
+          // Only show error if it's not a permission error during doctor creation
+          if (!error.message.includes('permission') || auth.currentUser?.email === ADMIN_EMAIL) {
+            setErrorMessage(`Failed to fetch doctors: ${error.message}`);
+          }
+        }
+      );
+      setUnsubscribeDoctors(() => unsubscribe);
     };
 
     checkAdminAccess();
+
+    return () => {
+      if (unsubscribeDoctors) {
+        unsubscribeDoctors();
+      }
+    };
   }, [navigate]);
 
   const handleInputChange = (e) => {
@@ -110,8 +128,10 @@ const Admin = () => {
     }
 
     try {
-      // Store admin email for re-authentication
-      const adminEmail = auth.currentUser.email;
+      // Temporarily disable the doctors listener to prevent permission errors
+      if (unsubscribeDoctors) {
+        unsubscribeDoctors();
+      }
 
       // Create the new doctor
       const userCredential = await createUserWithEmailAndPassword(
@@ -136,7 +156,7 @@ const Admin = () => {
       await signOut(auth);
 
       // Re-sign in the admin
-      await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
+      await signInWithEmailAndPassword(auth, ADMIN_EMAIL, adminPassword);
 
       // Reset form
       setNewDoctor({ firstName: '', lastName: '', email: '', password: '' });
@@ -144,11 +164,33 @@ const Admin = () => {
       setSuccessMessage('Doctor added successfully! They can now log in with their credentials.');
       setIsAddingDoctor(false);
       setTimeout(() => setSuccessMessage(''), 3000);
+
+      // Re-establish the doctors listener
+      const q = query(collection(db, 'users'), where('role', '==', 'doctor'));
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const doctorsList = querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setDoctors(doctorsList);
+      });
+      setUnsubscribeDoctors(() => unsubscribe);
     } catch (error) {
       setErrorMessage(error.message);
       // Attempt to sign the admin back in if the process fails
       try {
         await signInWithEmailAndPassword(auth, ADMIN_EMAIL, adminPassword);
+        
+        // Re-establish the doctors listener
+        const q = query(collection(db, 'users'), where('role', '==', 'doctor'));
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+          const doctorsList = querySnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+          setDoctors(doctorsList);
+        });
+        setUnsubscribeDoctors(() => unsubscribe);
       } catch (reSignInError) {
         setErrorMessage('Failed to re-authenticate admin: ' + reSignInError.message);
         navigate('/login');
