@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { auth, db } from '../firebase';
-import { collection, addDoc, query, where, onSnapshot, orderBy, getDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, orderBy, getDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -48,6 +48,27 @@ const Live = () => {
     } catch (err) {
       console.error('Error during logout:', err);
       setError('Failed to logout properly');
+    }
+  };
+
+  // Function to delete a message
+  const deleteMessage = async (messageId, senderId) => {
+    if (!selectedContact || !auth.currentUser) return;
+    
+    // Check if user is admin or the message sender
+    if (userRole !== 'admin' && senderId !== auth.currentUser.uid) {
+      setError('You can only delete your own messages');
+      return;
+    }
+
+    try {
+      const chatId = [auth.currentUser.uid, selectedContact.id].sort().join('_');
+      await deleteDoc(doc(db, 'chats', chatId, 'messages', messageId));
+      setError(null);
+      toast.success('Message deleted successfully');
+    } catch (err) {
+      console.error('Error deleting message:', err.message);
+      setError('Failed to delete message. Please try again.');
     }
   };
 
@@ -310,7 +331,7 @@ const Live = () => {
                 messages.map((msg) => (
                   <div
                     key={msg.id}
-                    className={`mb-4 ${
+                    className={`mb-4 group relative ${
                       msg.senderId === auth.currentUser?.uid ? 'text-right' : 'text-left'
                     }`}
                   >
@@ -322,6 +343,16 @@ const Live = () => {
                       }`}
                     >
                       {msg.text}
+                      {/* Delete button - only shown on hover and if user has permission */}
+                      {(userRole === 'admin' || msg.senderId === auth.currentUser?.uid) && (
+                        <button
+                          onClick={() => deleteMessage(msg.id, msg.senderId)}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                          title="Delete message"
+                        >
+                          ×
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))

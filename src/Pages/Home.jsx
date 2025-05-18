@@ -257,38 +257,6 @@ const Home = () => {
           </>
         )}
       </div>
-
-      {/* Add the animation keyframes to your global CSS or use a CSS-in-JS solution */}
-      <style jsx global>{`
-        @keyframes float {
-          0% {
-            transform: translateY(0) rotate(0deg);
-          }
-          50% {
-            transform: translateY(-20px) rotate(5deg);
-          }
-          100% {
-            transform: translateY(0) rotate(0deg);
-          }
-        }
-        @keyframes float-reverse {
-          0% {
-            transform: translateY(0) rotate(0deg);
-          }
-          50% {
-            transform: translateY(20px) rotate(-5deg);
-          }
-          100% {
-            transform: translateY(0) rotate(0deg);
-          }
-        }
-        .animate-float {
-          animation: float infinite ease-in-out;
-        }
-        .animate-float-reverse {
-          animation: float-reverse infinite ease-in-out;
-        }
-      `}</style>
     </div>
   );
 };
