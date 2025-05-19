@@ -133,6 +133,60 @@ const Chat = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const extractContent = (response) => {
+    // Log response for debugging
+    console.log("Extracting content from:", response);
+    
+    try {
+      // If response is already a string, return it directly
+      if (typeof response === 'string') {
+        // If it's a JSON string, try to parse it
+        if (response.startsWith('{') || response.startsWith('[')) {
+          try {
+            const parsedResponse = JSON.parse(response);
+            return extractContent(parsedResponse); // Recursively process the parsed object
+          } catch (e) {
+            console.log("Not valid JSON, using as string");
+            return response;
+          }
+        }
+        return response;
+      }
+      
+      // Handle the format in the newer example
+      if (response && response.message && response.message.role === 'assistant' && response.message.content) {
+        return response.message.content;
+      }
+      
+      // Handle the format from the first example
+      if (response && response.role === 'assistant' && response.content) {
+        return response.content;
+      }
+      
+      // Generic object checks
+      if (response && typeof response === 'object') {
+        if (response.content) return response.content;
+        if (response.message?.content) return response.message.content;
+        
+        // Look for nested message structure
+        if (response.index !== undefined && response.message) {
+          if (typeof response.message === 'string') return response.message;
+          if (response.message.content) return response.message.content;
+        }
+      }
+      
+      // If we couldn't extract content but have an object, convert to string for inspection
+      if (typeof response === 'object') {
+        return JSON.stringify(response);
+      }
+      
+      return "I received a response but couldn't extract the content. Please try again.";
+    } catch (error) {
+      console.error("Error extracting content:", error);
+      return "Error processing response. Please try again.";
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!input.trim() || !puterReady) return;
 
@@ -142,32 +196,53 @@ const Chat = () => {
     setLoading(true);
 
     try {
+      // Format chat history properly
       const chatHistory = newMessages.map(msg => ({
-        content: msg.text,
+        content: typeof msg.text === 'object' ? JSON.stringify(msg.text) : msg.text,
         role: msg.sender === "user" ? "user" : "assistant"
       }));
 
+      // Log the chat history being sent for debugging
+      console.log("Sending chat history:", chatHistory);
+
+      // Call Puter.ai API
       const response = await window.puter.ai.chat(chatHistory);
-      console.log("API Response:", response);
-
-      let botResponse = "";
-      if (response.success === false) {
-        botResponse = response.error?.message || "Sorry, I encountered an error. Please try again.";
-      } else if (typeof response === 'string') {
-        botResponse = response;
-      } else if (response?.content) {
-        botResponse = response.content;
-      } else if (response?.message) {
-        botResponse = response.message;
-      } else if (response?.choices?.[0]?.message?.content) {
-        botResponse = response.choices[0].message.content;
-      } else if (response?.result?.content) {
-        botResponse = response.result.content;
-      } else {
-        console.error("Unhandled response format:", response);
-        botResponse = "I received an unexpected response format. Please try again.";
+      console.log("Raw API Response:", response);
+      
+      // Handle the response based on the format received
+      let botResponse;
+      
+      // Handle string responses first (may be JSON strings)
+      if (typeof response === 'string') {
+        try {
+          if (response.startsWith('{') || response.startsWith('[')) {
+            const parsedResponse = JSON.parse(response);
+            botResponse = extractContent(parsedResponse);
+          } else {
+            botResponse = response;
+          }
+        } catch (e) {
+          botResponse = response; // Use as-is if parsing fails
+        }
+      } 
+      // Handle direct object responses
+      else if (typeof response === 'object') {
+        // Check for the specific format seen in the examples
+        if (response.message && response.message.role === 'assistant' && response.message.content) {
+          botResponse = response.message.content;
+        } else if (response.role === 'assistant' && response.content) {
+          botResponse = response.content;
+        } else {
+          // Fall back to our extraction function for other formats
+          botResponse = extractContent(response);
+        }
       }
-
+      else {
+        // Fall back to the generic extraction if the format is not recognized
+        botResponse = extractContent(response);
+      }
+      
+      console.log("Extracted bot response:", botResponse);
       setMessages([...newMessages, { text: botResponse, sender: "bot" }]);
     } catch (error) {
       console.error("API Error:", error);
@@ -183,6 +258,20 @@ const Chat = () => {
   // Navigation handlers
   const handleSignup = () => navigate('/signup');
   const handleLogin = () => navigate('/login');
+
+  // Format message text for display
+  const formatMessageText = (text) => {
+    if (typeof text === 'string') {
+      // Simple markdown-like formatting for better readability
+      return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Bold
+        .replace(/\*(.*?)\*/g, '<em>$1</em>') // Italic
+        .replace(/`(.*?)`/g, '<code>$1</code>') // Code
+        .replace(/\n\n/g, '<br/><br/>') // Paragraphs
+        .replace(/\n/g, '<br/>'); // Line breaks
+    }
+    return text;
+  };
 
   // Render for unauthenticated users
   if (!user) {
@@ -263,7 +352,14 @@ const Chat = () => {
                   : "bg-white border border-gray-200 rounded-bl-none shadow-sm"
               }`}
             >
-              {typeof msg.text === 'string' ? msg.text : JSON.stringify(msg.text)}
+              {msg.sender === "bot" ? (
+                <div 
+                  className="prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: formatMessageText(msg.text) }}
+                />
+              ) : (
+                <div>{msg.text}</div>
+              )}
             </div>
           </div>
         ))}
