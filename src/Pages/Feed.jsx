@@ -123,7 +123,12 @@ const Feed = () => {
     }
 
     // Apply topic filter
-    if (topicFilter !== 'all') {
+    if (topicFilter === 'all') {
+      // Filter out articles with 'other' topic when 'all' is selected
+      filtered = filtered.filter(article => 
+        article.topic !== 'other'
+      );
+    } else if (topicFilter !== 'all') {
       filtered = filtered.filter(article => 
         article.topic === topicFilter
       );
